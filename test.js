@@ -9,7 +9,8 @@ import {
   timeout,
   rateLimiter,
   cors,
-  client
+  client,
+  validateRequest
 } from "./index.js";
 
 const PORT = 4000;
@@ -136,6 +137,27 @@ app.get("/health-ready", healthz({
 
 app.get("/trace-demo", (req, res) => {
   res.json({ traceparent: req.headers.traceparent });
+});
+
+// Step 6: Input Validation Middleware
+app.post("/validate-user/:userId", json(), validateRequest({
+  params: {
+    userId: { type: "number", required: true }
+  },
+  query: {
+    admin: { type: "boolean", default: false }
+  },
+  body: {
+    username: { type: "string", required: true, pattern: /^[a-zA-Z0-9]+$/ },
+    email: { type: "string", required: true },
+    age: { type: "number", min: 18, max: 120 }
+  }
+}), (req, res) => {
+  res.json({
+    params: req.params,
+    query: req.query,
+    body: req.body
+  });
 });
 
 // -------------------------------------------------------------
@@ -349,6 +371,65 @@ app.runServerOn(PORT, async () => {
     const successData = await successRes.json();
     assert.strictEqual(successData.userId, "42");
     assert.strictEqual(cb.state, "CLOSED");
+  });
+
+  // Test 13: Request validation middleware
+  await asyncTest("Request schema validation (success & failure & coercion)", async () => {
+    // 1. Success case with coercion and defaults
+    const successRes = await fetch(`http://localhost:${PORT}/validate-user/123?admin=true`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: "johndoe",
+        email: "john@example.com",
+        age: 25
+      })
+    });
+    assert.strictEqual(successRes.status, 200);
+    const successData = await successRes.json();
+    assert.strictEqual(successData.params.userId, 123); // coerced to number
+    assert.strictEqual(successData.query.admin, true);  // coerced to boolean
+    assert.strictEqual(successData.body.username, "johndoe");
+    assert.strictEqual(successData.body.age, 25);
+
+    // 2. Success case with missing optional field triggering default
+    const defaultRes = await fetch(`http://localhost:${PORT}/validate-user/456`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: "janedoe",
+        email: "jane@example.com"
+      })
+    });
+    assert.strictEqual(defaultRes.status, 200);
+    const defaultData = await defaultRes.json();
+    assert.strictEqual(defaultData.query.admin, false); // default false
+    assert.strictEqual(defaultData.body.age, undefined); // optional and no default
+
+    // 3. Failure case
+    const failRes = await fetch(`http://localhost:${PORT}/validate-user/not-a-number`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        username: "invalid_name_$",
+        email: "jane@example.com",
+        age: 10 // below min 18
+      })
+    });
+    assert.strictEqual(failRes.status, 400);
+    const failData = await failRes.json();
+    assert.strictEqual(failData.error, "Bad Request");
+    assert.strictEqual(failData.message, "Validation Failed");
+    assert.ok(failData.details.length >= 3);
+    
+    const paramsError = failData.details.find(d => d.location === "params" && d.field === "userId");
+    assert.strictEqual(paramsError.issue, "Must be a number");
+
+    const patternError = failData.details.find(d => d.location === "body" && d.field === "username");
+    assert.strictEqual(patternError.issue, "Must match pattern");
+
+    const minError = failData.details.find(d => d.location === "body" && d.field === "age");
+    assert.strictEqual(minError.issue, "Must be at least 18");
   });
 
   // -------------------------------------------------------------

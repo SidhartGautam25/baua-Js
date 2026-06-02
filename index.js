@@ -8,10 +8,12 @@ import { rateLimiter } from "./lib/middleware/rateLimiter.js";
 import { cors } from "./lib/middleware/cors.js";
 import * as client from "./lib/utils/client.js";
 import { loadAndValidate as config } from "./lib/utils/config.js";
+import { validateRequest } from "./lib/middleware/validator.js";
 
 export function createServer(opts = {}) {
   const basic_server = new BasicServer(opts);
   return basic_server;
 }
 
-export { Router, json, urlencoded, logger, healthz, timeout, rateLimiter, cors, client, config };
+export { Router, json, urlencoded, logger, healthz, timeout, rateLimiter, cors, client, config, validateRequest };
+
