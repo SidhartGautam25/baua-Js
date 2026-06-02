@@ -1,0 +1,17 @@
+{
+  "name": "bauajs",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "sidhart gautam",
+  "license": "ISC",
+  "dependencies": {
+    "querystring": "^0.2.1",
+    "regexparam": "^3.0.0"
+  }
+}
