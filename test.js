@@ -10,7 +10,9 @@ import {
   rateLimiter,
   cors,
   client,
-  validateRequest
+  validateRequest,
+  metrics,
+  createMetricsCollector
 } from "./index.js";
 
 const PORT = 4000;
@@ -22,6 +24,10 @@ app.use(cors({
   credentials: true,
   allowedHeaders: ["X-Test-Request"]
 }));
+
+// Initialize metrics collector and mount metrics middleware
+const testCollector = createMetricsCollector();
+app.use(metrics({ collector: testCollector }));
 
 // Track test statistics
 let testsRun = 0;
@@ -158,6 +164,13 @@ app.post("/validate-user/:userId", json(), validateRequest({
     query: req.query,
     body: req.body
   });
+});
+
+// Step 7: Metrics dummy endpoint
+app.get("/metrics-slow", (req, res) => {
+  setTimeout(() => {
+    res.send("slow response");
+  }, 20);
 });
 
 // -------------------------------------------------------------
@@ -430,6 +443,28 @@ app.runServerOn(PORT, async () => {
 
     const minError = failData.details.find(d => d.location === "body" && d.field === "age");
     assert.strictEqual(minError.issue, "Must be at least 18");
+  });
+
+  // Test 14: Prometheus Metrics
+  await asyncTest("Prometheus Metrics collector & middleware", async () => {
+    // Make request to slow endpoint to record metrics
+    const slowRes = await fetch(`http://localhost:${PORT}/metrics-slow`);
+    assert.strictEqual(slowRes.status, 200);
+
+    // Call /metrics endpoint
+    const metricsRes = await fetch(`http://localhost:${PORT}/metrics`);
+    assert.strictEqual(metricsRes.status, 200);
+    const metricsText = await metricsRes.text();
+
+    // Verify presence of standard Prometheus metrics
+    assert.ok(metricsText.includes("http_requests_active"));
+    assert.ok(metricsText.includes("http_requests_total"));
+    assert.ok(metricsText.includes("http_request_duration_seconds"));
+
+    // Verify our specific route `/metrics-slow` metrics
+    assert.ok(metricsText.includes(`http_requests_total{method="GET",route="/metrics-slow",status="200"}`));
+    assert.ok(metricsText.includes(`http_request_duration_seconds_count{method="GET",route="/metrics-slow",status="200"}`));
+    assert.ok(metricsText.includes(`http_request_duration_seconds_sum{method="GET",route="/metrics-slow",status="200"}`));
   });
 
   // -------------------------------------------------------------
