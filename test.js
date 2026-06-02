@@ -16,7 +16,8 @@ import {
   createPubSub,
   MemoryDriver,
   ServiceRegistry,
-  LoadBalancer
+  LoadBalancer,
+  helmet
 } from "./index.js";
 
 const PORT = 4000;
@@ -175,6 +176,12 @@ app.get("/metrics-slow", (req, res) => {
   setTimeout(() => {
     res.send("slow response");
   }, 20);
+});
+
+// Step 8: Helmet security middleware endpoint
+app.get("/helmet-test", helmet({ "X-Frame-Options": "DENY", "X-DNS-Prefetch-Control": false }), (req, res) => {
+  res.setHeader("X-Powered-By", "BauaJS-Super-Server");
+  res.send("secured");
 });
 
 // -------------------------------------------------------------
@@ -585,10 +592,29 @@ app.runServerOn(PORT, async () => {
     assert.strictEqual(dataH1.instance, 2);
     assert.strictEqual(dataH2.instance, 2);
 
-    // Clean up
     registry.stopHealthChecks();
     await new Promise(r => s1.close(r));
     await new Promise(r => s2.close(r));
+  });
+
+  // Test 17: Helmet Security Headers Middleware
+  await asyncTest("Helmet Security Headers Middleware", async () => {
+    const res = await fetch(`http://localhost:${PORT}/helmet-test`);
+    assert.strictEqual(res.status, 200);
+
+    // Verify presence of standard security headers
+    assert.strictEqual(res.headers.get("x-content-type-options"), "nosniff");
+    assert.strictEqual(res.headers.get("referrer-policy"), "no-referrer");
+    assert.strictEqual(res.headers.get("content-security-policy"), "default-src 'self';base-uri 'self';font-src 'self' https: data:;form-action 'self';frame-ancestors 'self';img-src 'self' data:;object-src 'none';script-src 'self';script-src-attr 'none';style-src 'self' https: 'unsafe-inline';upgrade-insecure-requests");
+
+    // Verify overrides
+    assert.strictEqual(res.headers.get("x-frame-options"), "DENY");
+
+    // Verify disabled headers
+    assert.strictEqual(res.headers.get("x-dns-prefetch-control"), null);
+
+    // Verify stripping of X-Powered-By
+    assert.strictEqual(res.headers.get("x-powered-by"), null);
   });
 
   // -------------------------------------------------------------
