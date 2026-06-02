@@ -10,11 +10,13 @@ import * as client from "./lib/utils/client.js";
 import { loadAndValidate as config } from "./lib/utils/config.js";
 import { validateRequest } from "./lib/middleware/validator.js";
 import { metrics, createMetricsCollector } from "./lib/middleware/metrics.js";
+import { createPubSub, MemoryDriver, PubSub } from "./lib/utils/pubsub.js";
 
 export function createServer(opts = {}) {
   const basic_server = new BasicServer(opts);
   return basic_server;
 }
 
-export { Router, json, urlencoded, logger, healthz, timeout, rateLimiter, cors, client, config, validateRequest, metrics, createMetricsCollector };
+export { Router, json, urlencoded, logger, healthz, timeout, rateLimiter, cors, client, config, validateRequest, metrics, createMetricsCollector, createPubSub, MemoryDriver, PubSub };
+
 

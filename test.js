@@ -12,7 +12,9 @@ import {
   client,
   validateRequest,
   metrics,
-  createMetricsCollector
+  createMetricsCollector,
+  createPubSub,
+  MemoryDriver
 } from "./index.js";
 
 const PORT = 4000;
@@ -465,6 +467,45 @@ app.runServerOn(PORT, async () => {
     assert.ok(metricsText.includes(`http_requests_total{method="GET",route="/metrics-slow",status="200"}`));
     assert.ok(metricsText.includes(`http_request_duration_seconds_count{method="GET",route="/metrics-slow",status="200"}`));
     assert.ok(metricsText.includes(`http_request_duration_seconds_sum{method="GET",route="/metrics-slow",status="200"}`));
+  });
+
+  // Test 15: Event-Driven Messaging Pub/Sub
+  await asyncTest("Event-Driven Messaging Pub/Sub with tracing context propagation", async () => {
+    const pubsub = createPubSub(new MemoryDriver());
+
+    const received = [];
+    pubsub.subscribe("test.topic", (payload, context) => {
+      received.push({ payload, context });
+    });
+
+    // 1. Publish with no parent (generates context)
+    await pubsub.publish("test.topic", { value: "hello" });
+    
+    // 2. Publish with parent
+    const mockParent = {
+      id: "parent-correlation-id-123",
+      headers: {
+        traceparent: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+      }
+    };
+    await pubsub.publish("test.topic", { value: "world" }, { parent: mockParent });
+
+    // Wait for the memory driver asynchronous delivery
+    await new Promise((resolve) => setImmediate(resolve));
+
+    // Verify assertions
+    assert.strictEqual(received.length, 2);
+
+    // First message: auto-generated context
+    assert.strictEqual(received[0].payload.value, "hello");
+    assert.ok(received[0].context.id);
+    assert.ok(received[0].context.headers.traceparent);
+
+    // Second message: propagated context
+    assert.strictEqual(received[1].payload.value, "world");
+    assert.strictEqual(received[1].context.id, "parent-correlation-id-123");
+    assert.strictEqual(received[1].context.headers["x-correlation-id"], "parent-correlation-id-123");
+    assert.strictEqual(received[1].context.headers.traceparent, "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
   });
 
   // -------------------------------------------------------------
