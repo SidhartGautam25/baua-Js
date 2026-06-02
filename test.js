@@ -14,7 +14,9 @@ import {
   metrics,
   createMetricsCollector,
   createPubSub,
-  MemoryDriver
+  MemoryDriver,
+  ServiceRegistry,
+  LoadBalancer
 } from "./index.js";
 
 const PORT = 4000;
@@ -506,6 +508,87 @@ app.runServerOn(PORT, async () => {
     assert.strictEqual(received[1].context.id, "parent-correlation-id-123");
     assert.strictEqual(received[1].context.headers["x-correlation-id"], "parent-correlation-id-123");
     assert.strictEqual(received[1].context.headers.traceparent, "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01");
+  });
+
+  // Test 16: Client-Side Load Balancing and Service Discovery
+  await asyncTest("Client-Side Load Balancing & Service Discovery with Health Checks", async () => {
+    const http = await import("http");
+
+    // 1. Setup mock instance servers
+    let health1 = true;
+    let health2 = true;
+
+    const s1 = http.createServer((req, res) => {
+      if (req.url === "/healthz") {
+        res.writeHead(health1 ? 200 : 500);
+        res.end();
+      } else {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ instance: 1 }));
+      }
+    });
+
+    const s2 = http.createServer((req, res) => {
+      if (req.url === "/healthz") {
+        res.writeHead(health2 ? 200 : 500);
+        res.end();
+      } else {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ instance: 2 }));
+      }
+    });
+
+    await new Promise(r => s1.listen(4001, r));
+    await new Promise(r => s2.listen(4002, r));
+
+    // 2. Setup custom registry & load balancer to avoid polluting global state
+    const registry = new ServiceRegistry({ healthCheckInterval: 50, healthCheckPath: "/healthz" });
+    const loadBalancer = new LoadBalancer(registry);
+
+    registry.register("test-service", "http://localhost:4001");
+    registry.register("test-service", "http://localhost:4002");
+
+    // 3. Test Round-Robin Selection
+    const res1 = await client.request(null, "http://test-service/info", { registry, loadBalancer, lbStrategy: "round-robin" });
+    const data1 = await res1.json();
+    
+    const res2 = await client.request(null, "http://test-service/info", { registry, loadBalancer, lbStrategy: "round-robin" });
+    const data2 = await res2.json();
+
+    const res3 = await client.request(null, "http://test-service/info", { registry, loadBalancer, lbStrategy: "round-robin" });
+    const data3 = await res3.json();
+
+    // Verify it cycles 1 -> 2 -> 1
+    assert.strictEqual(data1.instance, 1);
+    assert.strictEqual(data2.instance, 2);
+    assert.strictEqual(data3.instance, 1);
+
+    // 4. Test Least-Connections Selection
+    // Manually increment s1 connections so s2 is picked
+    loadBalancer.incrementConnections("http://localhost:4001");
+    const resLC = await client.request(null, "http://test-service/info", { registry, loadBalancer, lbStrategy: "least-connections" });
+    const dataLC = await resLC.json();
+    assert.strictEqual(dataLC.instance, 2);
+    loadBalancer.decrementConnections("http://localhost:4001");
+
+    // 5. Test Health Check Exclusion
+    health1 = false;
+    // Wait for health check interval to check status (interval is 50ms)
+    await new Promise(resolve => setTimeout(resolve, 100));
+
+    // Now s1 (4001) is unhealthy, so s2 (4002) should always be resolved
+    const resH1 = await client.request(null, "http://test-service/info", { registry, loadBalancer, lbStrategy: "round-robin" });
+    const dataH1 = await resH1.json();
+    const resH2 = await client.request(null, "http://test-service/info", { registry, loadBalancer, lbStrategy: "round-robin" });
+    const dataH2 = await resH2.json();
+
+    assert.strictEqual(dataH1.instance, 2);
+    assert.strictEqual(dataH2.instance, 2);
+
+    // Clean up
+    registry.stopHealthChecks();
+    await new Promise(r => s1.close(r));
+    await new Promise(r => s2.close(r));
   });
 
   // -------------------------------------------------------------
