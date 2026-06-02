@@ -1,9 +1,11 @@
 import { BasicServer } from "./lib/server.js";
+import { Router } from "./lib/router.js";
 import { json, urlencoded } from "./lib/utils/bodyParser.js";
 import { logger } from "./lib/middleware/logger.js";
 import { healthz } from "./lib/middleware/healthz.js";
 import { timeout } from "./lib/middleware/timeout.js";
 import { rateLimiter } from "./lib/middleware/rateLimiter.js";
+import { cors } from "./lib/middleware/cors.js";
 import * as client from "./lib/utils/client.js";
 import { loadAndValidate as config } from "./lib/utils/config.js";
 
@@ -12,4 +14,4 @@ export function createServer(opts = {}) {
   return basic_server;
 }
 
-export { json, urlencoded, logger, healthz, timeout, rateLimiter, client, config };
+export { Router, json, urlencoded, logger, healthz, timeout, rateLimiter, cors, client, config };
