@@ -1,15 +1,30 @@
 {
   "name": "bauajs",
   "version": "1.0.0",
-  "description": "",
+  "description": "Zero-dependency, ultra-lightweight Node.js microservices framework supporting routing, resilience, tracing, metrics, pub/sub, load balancing, and security.",
   "main": "index.js",
   "type": "module",
+  "files": [
+    "index.js",
+    "lib",
+    "readme.md"
+  ],
   "scripts": {
     "test": "node test.js"
   },
-  "keywords": [],
+  "keywords": [
+    "microservices",
+    "framework",
+    "router",
+    "tracing",
+    "resilience",
+    "metrics",
+    "pubsub",
+    "loadbalancer",
+    "security"
+  ],
   "author": "sidhart gautam",
-  "license": "ISC",
+  "license": "MIT",
   "dependencies": {
     "querystring": "^0.2.1",
     "regexparam": "^3.0.0"
